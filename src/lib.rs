@@ -4,16 +4,14 @@
 //! This library supports the joystick incorporated with the Sense HAT.
 //!
 //! The Joystick provides a driver for `evdev`.
-#[cfg(feature = "linux-evdev")]
-extern crate evdev;
-extern crate glob;
 
-use evdev::Device;
+use evdev::{Device, EventStream};
+use futures_core::{ready, Stream};
 use glob::glob;
 use num_enum::TryFromPrimitive;
 
 use std::io;
-use std::os::{fd::AsRawFd, unix::io::RawFd};
+use std::task::Poll;
 use std::time::{Duration, UNIX_EPOCH};
 
 // Device name provided by the hardware. We match against it.
@@ -67,8 +65,36 @@ impl JoyStickEvent {
 }
 
 /// A type representing the Sense HAT joystick device.
+#[pin_project::pin_project]
 pub struct JoyStick {
-    device: Device,
+    #[pin]
+    device: EventStream,
+}
+
+impl Stream for JoyStick {
+    type Item = io::Result<JoyStickEvent>;
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let mut this = self.project();
+        loop {
+            let key = match ready!(this.device.poll_event(cx)) {
+                Ok(key) => key,
+                Err(e) => return Poll::Ready(Some(Err(e))),
+            };
+
+            if key.event_type().0 != 1 {
+                continue;
+            }
+
+            let time = key.timestamp().duration_since(UNIX_EPOCH).unwrap();
+
+            let direction = Direction::try_from(key.code() as usize).unwrap();
+            let action = Action::try_from(key.value() as usize).unwrap();
+            return Poll::Ready(Some(Ok(JoyStickEvent::new(time, direction, action))));
+        }
+    }
 }
 
 impl JoyStick {
@@ -81,7 +107,9 @@ impl JoyStick {
                 Ok(path) => {
                     let device = Device::open(&path)?;
                     if device.name().unwrap_or_default().as_bytes() == SENSE_HAT_EVDEV_NAME {
-                        return Ok(JoyStick { device });
+                        return Ok(JoyStick {
+                            device: device.into_event_stream()?,
+                        });
                     }
                 }
                 Err(e) => return Err(e.into_error()),
@@ -91,29 +119,5 @@ impl JoyStick {
             io::ErrorKind::NotFound,
             "No Joystick found",
         ));
-    }
-
-    /// Returns a result with a `Vec<JoyStickEvent>`. This function will
-    /// block the current thread until events are issued by the `JoyStick` device.
-    pub fn events(&mut self) -> io::Result<Vec<JoyStickEvent>> {
-        let events: Vec<JoyStickEvent> = self
-            .device
-            .fetch_events()
-            .map_err(|e| io::Error::from(e))?
-            .filter(|ev| ev.event_type().0 == 1)
-            .map(|ev| {
-                let time = ev.timestamp().duration_since(UNIX_EPOCH).unwrap();
-
-                let direction = Direction::try_from(ev.code() as usize).unwrap();
-                let action = Action::try_from(ev.value() as usize).unwrap();
-                JoyStickEvent::new(time, direction, action)
-            })
-            .collect();
-        Ok(events)
-    }
-
-    /// Returns the raw file-descriptor, `RawFd`, for the the Joystick.
-    pub fn fd(&self) -> RawFd {
-        self.device.as_raw_fd()
     }
 }

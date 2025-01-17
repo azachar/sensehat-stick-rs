@@ -11,11 +11,10 @@ repository = "https://github.com/saibatizoku/sensehat-stick-rs"
 readme = "README.md"
 license = "MIT"
 
-[features]
-default = ["linux-evdev"]
-linux-evdev = ["evdev"]
 
 [dependencies]
-evdev = { version = "0.12", optional = true }
+evdev = { version = "0.12", features = ["tokio"] }
+futures-core = "0.3.31"
 glob = "0.3"
 num_enum = "0.7.3"
+pin-project = "1.1.8"
