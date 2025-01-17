@@ -2,6 +2,7 @@
 name = "sensehat-stick"
 description = "A Rust library for the Raspberry Pi Sense HAT Joystick."
 version = "0.1.0"
+edition = "2021"
 authors = ["Joaquin Rosales <globojorro@gmail.com>"]
 keywords = ["sensehat", "hardware", "joystick", "raspberry-pi", "evdev"]
 categories = ["hardware-support", "asynchronous"]
@@ -11,12 +12,10 @@ readme = "README.md"
 license = "MIT"
 
 [features]
-default = ["linux-evdev", "poll"]
+default = ["linux-evdev"]
 linux-evdev = ["evdev"]
-poll = ["mio"]
 
 [dependencies]
-evdev = { version = "0.10", optional = true }
-failure = "0.1"
-glob = "0.2"
-mio = { version = "0.6", optional = true }
+evdev = { version = "0.12", optional = true }
+glob = "0.3"
+num_enum = "0.7.3"
